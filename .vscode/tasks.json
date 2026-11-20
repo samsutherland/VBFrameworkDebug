@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build debugger",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}\\scripts\\build.ps1"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Build VB fixture",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "tests\\Fixture\\Fixture.vbproj"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Build debugger and fixture",
+      "dependsOn": ["Build debugger", "Build VB fixture"],
+      "problemMatcher": []
+    }
+  ]
+}

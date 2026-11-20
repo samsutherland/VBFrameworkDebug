@@ -1,0 +1,7 @@
+{
+  "name": "vb-framework-debug-test-host",
+  "publisher": "vbframeworkdebug",
+  "version": "0.0.0",
+  "engines": { "vscode": "^1.85.0" },
+  "private": true
+}

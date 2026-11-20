@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run the extension in a development host",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}"],
+      "preLaunchTask": "Build debugger and fixture"
+    },
+    {
+      "name": "Debug the VB console fixture",
+      "type": "desktopclr",
+      "request": "launch",
+      "program": "${workspaceFolder}\\tests\\Fixture\\bin\\Debug\\net48\\Fixture.exe",
+      "architecture": "x64"
+    }
+  ]
+}

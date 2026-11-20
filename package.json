@@ -1,0 +1,60 @@
+{
+  "name": "vb-framework-debug",
+  "displayName": "VB.NET Framework Debugger",
+  "description": "Launch and debug VB.NET console applications on the Windows desktop CLR.",
+  "publisher": "vbframeworkdebug",
+  "version": "0.1.1",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Debuggers"],
+  "main": "./extension.js",
+  "activationEvents": ["onDebugResolve:desktopclr"],
+  "extensionKind": ["workspace"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": false },
+    "virtualWorkspaces": { "supported": false }
+  },
+  "contributes": {
+    "breakpoints": [{ "language": "vb" }],
+    "debuggers": [{
+      "type": "desktopclr",
+      "label": "VB.NET (.NET Framework)",
+      "languages": ["vb"],
+      "configurationAttributes": {
+        "launch": {
+          "required": ["program"],
+          "properties": {
+            "program": {
+              "type": "string",
+              "description": "Path to a built .NET Framework console executable.",
+              "default": "${workspaceFolder}\\bin\\Debug\\MyApp.exe"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Working directory. Defaults to the executable's directory."
+            },
+            "args": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [],
+              "description": "Arguments passed to the executable."
+            },
+            "architecture": {
+              "type": "string",
+              "enum": ["x64", "x86"],
+              "default": "x64",
+              "description": "Debuggee architecture. Select x86 for an x86 or Prefer 32-bit executable."
+            }
+          }
+        }
+      },
+      "initialConfigurations": [{
+        "name": "Launch VB.NET Framework console app",
+        "type": "desktopclr",
+        "request": "launch",
+        "program": "${workspaceFolder}\\bin\\Debug\\MyApp.exe",
+        "architecture": "x64"
+      }]
+    }]
+  }
+}

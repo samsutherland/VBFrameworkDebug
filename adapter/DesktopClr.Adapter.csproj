@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <PlatformTarget Condition="'$(PlatformTarget)' == ''">x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ClrDebug" Version="0.4.2" />
+    <PackageReference Include="dnlib" Version="4.5.0" />
+    <PackageReference Include="System.Text.Json" Version="8.0.6" />
+    <PackageReference Include="System.Reflection.Metadata" Version="8.0.1" />
+  </ItemGroup>
+</Project>
