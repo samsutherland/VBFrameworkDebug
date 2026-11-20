@@ -1,10 +1,10 @@
 # VB.NET Framework Debugger for VS Code
 
-Launch a local VB.NET console executable targeting .NET Framework 4.8 from VS Code on x64 Windows. The extension supports source breakpoints, step into/over/out, call stacks, and read-only locals and arguments. It ships x86 and x64 debug adapter workers, uses the installed desktop CLR, and does not depend on Visual Studio or the C# extension.
+Debug local VB.NET console and WinForms applications targeting .NET Framework 4.8 from VS Code on x64 Windows. Includes x86/x64 desktop CLR workers; Visual Studio and the C# extension are not runtime dependencies. Version 0.2.0 is a preview, not Visual Studio debugger parity.
 
 ## Debug an existing project
 
-1. Install the Windows VSIX with **Extensions: Install from VSIX**.
+1. Download the VSIX from [GitHub Releases](https://github.com/samsutherland/VBFrameworkDebug/releases), optionally verify it against the attached `SHA256SUMS.txt`, and install with **Extensions: Install from VSIX**. GitHub installations do not auto-update; install the newer VSIX to update.
 2. Build the VB project with debugging symbols and optimizations disabled. The debugger reads both Portable PDBs (`DebugType=portable`) and classic Windows PDBs (`DebugType=full`), with the matching `.pdb` beside the executable.
 3. Add a configuration to `.vscode\launch.json`, then open the VB source, set a breakpoint on an executable statement, and press **F5**:
 
@@ -26,14 +26,86 @@ Launch a local VB.NET console executable targeting .NET Framework 4.8 from VS Co
 
 Use `"architecture": "x86"` for an x86 or Prefer 32-bit executable. An AnyCPU executable without Prefer 32-bit runs as x64 on x64 Windows. The working directory defaults to the executable's directory; use `cwd` to override it and `preLaunchTask` for an optional build task. Program input/output is in a separate Windows console, not the debug console.
 
-The Debug Console, Watch window, and hovers can evaluate local and argument names in the selected stack frame (for example `environment`, `Me`, or `[answer]`). Names are case-insensitive. Results can be expanded like Locals. This is read-only name lookup, not a full VB expression evaluator: arithmetic, member access, array indexing, assignments, property evaluation, and method calls are not yet supported.
+## Inspect values and expressions
 
-If a breakpoint stays unverified, check that the source path matches the build machine's path recorded in the PDB and that the line contains an executable statement. Use project binaries and PDBs you trust. Source remapping, symbol servers, attach, mixed-mode debugging, conditional breakpoints, and optimized/async stepping parity are not supported. Variable expansion reads fields and array elements directly, with limits; it does not run property getters or `ToString`.
+Debug Console, Watch, and hover share one read-only evaluator in the selected stack frame. Names are case-insensitive. Supported examples:
+
+```vb
+environment
+Me
+[answer]
+sample.Count
+sample.BaseCount
+numbers(1)
+matrix(-1, 3)
+answer + 1
+(answer > 40) AndAlso (sample.Count = 7)
+environment & " value"
+empty Is Nothing
+```
+
+- Locals/arguments, `Me`, inherited instance fields, array indexing/grouping, boxed primitives, Decimal, and enum display. Arrays retain rank and actual lower bounds, with pages of at most 100 children. Expandable values provide reusable evaluation paths where representable.
+- Literals (`True`, `False`, `Nothing`, doubled-quote strings, decimal numbers with optional `L`, `D`, `R`, `F` suffixes), unary `+`/`-`/`Not`, `+ - * / \ Mod`, string-only `&`, comparisons, reference `Is`/`IsNot`, and short-circuit `AndAlso`/`OrElse`.
+- Arithmetic supports signed Integer/Long, Decimal, and finite Double values with checked integer/decimal overflow. `/` is floating/decimal division; `\` requires integer operands. Single/unsigned arithmetic, implicit object/Boolean/string conversions, and non-finite floating results are rejected, not guessed. Use `L` for integer literals outside Integer range.
+- String comparisons require `"expressionStringComparison": "binary"` in launch/attach configuration. Set this only when Option Compare Binary semantics are appropriate. Project Option Compare/culture settings are not inferred.
+- No assignments, method/property/default-property invocation, overloaded/custom operators, LINQ, late binding, implicit `ToString`, or debuggee-side conversions. Getters are never executed.
+- Expressions are bounded to 4096 characters and 32 nested levels. Display strings are capped at 1024 characters; expression strings at 4096. Per-stop variable handles are bounded; references expire on resume.
+- Basic VB async state-machine inspection recovers `Me` and uniquely named saved locals/arguments from compiler-generated fields. Ambiguous hoisted scopes are rejected. Generated frame names remain visible; logical async stacks and step-over-Await parity are not implemented.
+
+An executable statement breakpoint must expose the real argument value. Stepping into a native method prologue can legitimately report `CORDBG_E_IL_VAR_NOT_AVAILABLE` (`0x80131304`); continue to the first executable statement before inspecting it.
+
+## Breakpoints, exceptions, and execution
+
+Source breakpoints, step into/over/out, pause, threads, and call stacks use **all-stop** execution. Single-thread and instruction stepping are unsupported. Managed frames without symbols are displayed without invented source locations.
+
+Conditional breakpoints use the same pure evaluator and require a Boolean. Hit conditions accept positive `N` or `>= N` (stop from hit N onward), `== N` (only hit N), and `% N` (every Nth hit). Counts increment before condition evaluation, per logical breakpoint across threads/AppDomains. Reapplying an identical specification preserves its count/ID; changing or removing/readding it resets them.
+
+Logpoints support `count={iteration}` and escaped `{{` / `}}`. Expressions use the same display formatting as Watch (including quoted strings). Successful logpoints do not stop. Condition/logpoint evaluation errors **stop and report a diagnostic**, never silently skip the breakpoint.
+
+The Breakpoints view exposes **Unhandled CLR exceptions** (default) and **All thrown CLR exceptions**. Exception details read type, message, and bounded inner exceptions without getters. WinForms/Task infrastructure may catch failures before CLR-unhandled notification; enable all-thrown when investigating them.
+
+## Attach and detach
+
+Use the numeric PID of a local .NET Framework process and its matching architecture:
+
+```json
+{
+  "name": "Attach VB.NET Framework",
+  "type": "desktopclr",
+  "request": "attach",
+  "processId": 1234,
+  "architecture": "x64"
+}
+```
+
+Attach resumes after initial configuration; set source breakpoints before continuing configuration or use Pause once attached. Disconnect/client EOF detaches and resumes attached processes by default; launched processes terminate by default. DAP `disconnect.terminateDebuggee` overrides ownership policy. No process picker, automatic elevation, modern .NET/CoreCLR, remote, IIS/service, mixed-mode, or Edit and Continue support.
+
+Known shutdown limitation: forcibly killing an externally attached, paused target can leave the CLR debugger reporting `CORDBG_E_ILLEGAL_SHUTDOWN_ORDER` during final cleanup. The worker reports this warning and exits; OS handles are released and the exit-race test verifies no surviving target. This native cleanup warning remains a release-qualification issue.
+
+## Sources and diagnostics
+
+Keep the matching PDB beside each module. Module events and the DAP Modules request expose symbol status, including missing/mismatched symbols. Breakpoint IDs remain stable across module reloads. Exact executable lines are preferred; comment lines relocate only inside a single proven containing method/source span. Ambiguous locations stay unverified rather than moving to a neighboring method. DAP executable-location queries are supported.
+
+For builds from another directory, map absolute PDB source prefixes to local directories:
+
+```json
+"sourceFileMap": { "C:\\build\\src": "${workspaceFolder}" }
+```
+
+Longest path-boundary-matched prefix wins. Mapped source checksums are verified; modified sources stay unverified. Missing checksums produce a warning, not a claim of verification. No source download or symbol server support. Use binaries and PDBs you trust.
+
+Set `"diagnostics": true` to emit `[desktopclr]` request names and stop/module transitions. This opt-in trace excludes expression text, variable values, launch arguments, and paths. **Ordinary errors and module/source responses can contain paths; Debug Console results/logpoints contain values.** Review/redact the entire console or protocol capture before sharing it; do not share raw captures containing credentials or business data.
 
 ## Develop and package
 
-On Windows, with PowerShell 7 and a .NET SDK, run `.\scripts\build.ps1` to stage the two workers. Run `.\scripts\build.ps1 -Package` (also requires Node.js/npm) to create the VSIX in `dist`. For development, run **Run the extension in a development host** in this workspace; in the new window choose **Debug the VB console fixture**.
+On Windows, with PowerShell 7, .NET SDK 8 or later, and .NET Framework 4.8 runtime/reference assemblies, run `.\scripts\build.ps1` to stage the two workers. NuGet restores reference assemblies when needed; building does not require the Visual Studio IDE. Run `.\scripts\build.ps1 -Package` (requires Node.js 22+/npm) to create a versioned VSIX and `dist\release-info.json` with source revision/dirty state and package/worker SHA256 hashes. The VSIX contains both workers. For development, use **Run the extension in a development host** in this workspace.
 
-Run `python tests\smoke.py` after building the fixture and adapter in Debug, or run `.\scripts\test.ps1` for the supported architecture/PDB matrix and negative cases. Add `-VSCode` to build and install the VSIX in an isolated VS Code profile and verify a source breakpoint and Locals without the C# extension.
+Run `.\scripts\test.ps1` (also requires Python 3 and Node.js) for pure evaluator/extension tests and real console/WinForms DAP tests in the x86/x64 x Portable/Windows PDB matrix, plus Prefer32Bit and negative symbol/bitness cases. Add `-VSCode` to package/install the VSIX into an isolated VS Code profile and verify conditional breakpoints, evaluation, paging, modules, and locations without the C# extension. The Windows GitHub workflow runs the matrix and publishes VSIX/metadata/test-log artifacts; it must pass remotely before treating CI as qualified.
+
+The complete matrix and isolated-profile installation have been exercised on a developer machine. **A separate clean Windows machine without Visual Studio has not yet been qualified.** A release gate is to install only the Framework runtime, VS Code, and the prebuilt VSIX/fixtures there, then verify both launch and attach (including detach survival). An isolated profile is not a substitute for that test.
+
+### GitHub prereleases
+
+After updating the extension version and committing the source, push a matching tag such as `v0.2.0`. The Windows workflow verifies the version, runs the test matrix, packages the workers, and creates a **draft prerelease** containing the VSIX, provenance metadata, and `SHA256SUMS.txt`. Release creation uses the repository's built-in Actions token; no personal publishing token is needed. The release job only runs after successful tests on a version-tag push. Review the workflow results and draft assets before publishing the prerelease. Workflow artifacts from ordinary commits/PRs are not published releases.
 
 The extension and adapter are MIT-licensed. The VSIX includes notices for ClrDebug, dnlib, and the Microsoft runtime libraries that it bundles. The .NET Framework runtime is a system prerequisite and is not included.

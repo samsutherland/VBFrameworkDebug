@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="DesktopClr.EvaluatorTests" />
     <PackageReference Include="ClrDebug" Version="0.4.2" />
     <PackageReference Include="dnlib" Version="4.5.0" />
     <PackageReference Include="System.Text.Json" Version="8.0.6" />

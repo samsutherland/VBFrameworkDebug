@@ -35,8 +35,22 @@ try {
     if ($Package) {
         $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
         New-Item 'dist' -ItemType Directory -Force | Out-Null
+        $vsix = "dist\vb-framework-debug-$version-win32-x64.vsix"
         npx --yes --package '@vscode/vsce@4.1.1' vsce package --target win32-x64 --no-dependencies `
-            --allow-missing-repository --out "dist\vb-framework-debug-$version-win32-x64.vsix"
+            --out $vsix
+        [ordered]@{
+            version = $version
+            revision = (git rev-parse HEAD)
+            sourceDirty = [bool](git status --porcelain)
+            package = (Split-Path -Leaf $vsix)
+            sha256 = (Get-FileHash -LiteralPath $vsix -Algorithm SHA256).Hash
+            workers = @(foreach ($architecture in 'x64', 'x86') {
+                [ordered]@{
+                    architecture = $architecture
+                    sha256 = (Get-FileHash -LiteralPath "bin\$architecture\DesktopClr.Adapter.exe" -Algorithm SHA256).Hash
+                }
+            })
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath 'dist\release-info.json' -Encoding utf8NoBOM
     }
 }
 finally {

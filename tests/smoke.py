@@ -24,7 +24,8 @@ class Client:
         self.queue = Queue()
         self.messages = []
         self.sequence = 0
-        Thread(target=self.read, daemon=True).start()
+        self.reader = Thread(target=self.read, daemon=True)
+        self.reader.start()
 
     def read(self):
         stream = self.proc.stdout
@@ -76,6 +77,8 @@ class Client:
         except subprocess.TimeoutExpired:
             self.proc.kill()
             self.proc.wait(timeout=5)
+        self.reader.join(timeout=5)
+        self.proc.stdout.close()
 
 
 def smoke(adapter, fixture, mode):
@@ -135,8 +138,9 @@ def smoke(adapter, fixture, mode):
         evaluated_args = client.request("evaluate", expression="args", frameId=main["id"])
         assert evaluated_args["variablesReference"] > 0
         assert client.request("variables", variablesReference=evaluated_args["variablesReference"])["variables"][0]["value"] == '"two words"'
-        for expression, message in (("absent", "not a local or argument"), ("answer + 1", "Only local"),
-                                    ("Increment(answer)", "Only local"), ("", "Only local")):
+        assert client.request("evaluate", expression="answer + 1", frameId=main["id"])["result"] == "42"
+        for expression, message in (("absent", "not a local or argument"), ("answer ^ 2", "Unsupported VB"),
+                                    ("Increment(answer)", "not a local or argument"), ("", "nonempty")):
             response = client.response(client.send("evaluate", expression=expression, frameId=main["id"]), success=False)
             assert message in response["message"], response
         client.response(client.send("evaluate", expression="answer"), success=False)
@@ -154,9 +158,17 @@ def smoke(adapter, fixture, mode):
         helper_scopes = client.request("scopes", frameId=frames[0]["id"])["scopes"]
         helper_args = client.request("variables", variablesReference=helper_scopes[1]["variablesReference"])["variables"]
         assert any(v["name"] == "value" for v in helper_args), helper_args
-        value = client.request("evaluate", expression="value", frameId=frames[0]["id"])
-        assert value["result"] == next(v["value"] for v in helper_args if v["name"] == "value"), value
+        # A step-in can land in the native prologue before the argument is available.
+        if next(v["value"] for v in helper_args if v["name"] == "value").startswith("<unavailable:"):
+            client.response(client.send("evaluate", expression="value", frameId=frames[0]["id"]), success=False)
+        else:
+            assert client.request("evaluate", expression="value", frameId=frames[0]["id"])["result"] == "41"
         assert client.request("evaluate", expression="environment", frameId=frames[1]["id"])["result"] == '"Test"'
+        client.request("setBreakpoints", source={"path": str(SOURCE)}, breakpoints=[{"line": MARKERS["HELPER"]}])
+        client.request("continue", threadId=thread)
+        assert client.event("stopped")["reason"] == "breakpoint"
+        frames = stack("Program.Increment", MARKERS["HELPER"])
+        assert client.request("evaluate", expression="value", frameId=frames[0]["id"])["result"] == "41"
         client.request("stepOut", threadId=thread)
         assert client.event("stopped")["reason"] == "step"
         stack("Program.Main")

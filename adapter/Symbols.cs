@@ -4,7 +4,8 @@ using System.Reflection.PortableExecutable;
 
 namespace DesktopClr;
 
-internal sealed class SourcePoint(string path, int line, int column, int token, int offset)
+internal sealed class SourcePoint(string path, int line, int column, int token, int offset,
+    int endLine, int endColumn, Guid hashAlgorithm, byte[] checksum)
 {
     public string Path { get; } = path;
     public int Line { get; } = line;
@@ -12,6 +13,10 @@ internal sealed class SourcePoint(string path, int line, int column, int token, 
     public int Token { get; } = token;
     public int Offset { get; } = offset;
     public bool Hidden => Line == 0xFEEFEE;
+    public int EndLine { get; } = endLine;
+    public int EndColumn { get; } = endColumn;
+    public Guid HashAlgorithm { get; } = hashAlgorithm;
+    public byte[] Checksum { get; } = checksum;
 }
 
 internal sealed class MethodSymbols(string name, string[] arguments, bool isStatic)
@@ -57,8 +62,13 @@ internal static class Symbols
             {
                 var doc = point.Document.IsNil ? info.Document : point.Document;
                 if (!doc.IsNil)
-                    method.Points.Add(new SourcePoint(pdb.GetString(pdb.GetDocument(doc).Name),
-                        point.StartLine, point.StartColumn, token, point.Offset));
+                {
+                    var document = pdb.GetDocument(doc);
+                    method.Points.Add(new SourcePoint(pdb.GetString(document.Name),
+                        point.StartLine, point.StartColumn, token, point.Offset, point.EndLine, point.EndColumn,
+                        document.HashAlgorithm.IsNil ? Guid.Empty : pdb.GetGuid(document.HashAlgorithm),
+                        document.Hash.IsNil ? Array.Empty<byte>() : pdb.GetBlobBytes(document.Hash)));
+                }
             }
             foreach (var scopeHandle in pdb.GetLocalScopes(handle))
             {
@@ -87,29 +97,30 @@ internal static class Symbols
             throw new InvalidDataException($"PDB does not match {Path.GetFileName(module)} or could not be read.");
         var methods = new Dictionary<int, MethodSymbols>();
         foreach (var type in image.GetTypes())
-        foreach (var definition in type.Methods)
-        {
-            if (definition.Body is not { PdbMethod: { } pdb } body) continue;
-            int token = definition.MDToken.ToInt32();
-            var method = new MethodSymbols($"{type.Name}.{definition.Name}", definition.ParamDefs
-                .Where(p => p.Sequence > 0).OrderBy(p => p.Sequence).Select(p => p.Name.String).ToArray(), definition.IsStatic);
-            foreach (var instruction in body.Instructions)
-                if (instruction.SequencePoint is { Document: { } doc } point)
-                    method.Points.Add(new SourcePoint(doc.Url, point.StartLine, point.StartColumn, token, (int)instruction.Offset));
-            int end = body.Instructions.Count == 0 ? 0 : (int)body.Instructions.Last().Offset + body.Instructions.Last().GetSize();
-            AddScope(pdb.Scope);
-            methods.Add(token, method);
-
-            void AddScope(dnlib.DotNet.Pdb.PdbScope scope)
+            foreach (var definition in type.Methods)
             {
-                int startOffset = (int)(scope.Start?.Offset ?? 0);
-                int endOffset = scope.End == null ? end : (int)scope.End.Offset;
-                foreach (var local in scope.Variables)
-                    if ((local.Attributes & dnlib.DotNet.Pdb.PdbLocalAttributes.DebuggerHidden) == 0)
-                        method.Locals.Add((startOffset, endOffset, local.Index, local.Name));
-                foreach (var child in scope.Scopes) AddScope(child);
+                if (definition.Body is not { PdbMethod: { } pdb } body) continue;
+                int token = definition.MDToken.ToInt32();
+                var method = new MethodSymbols($"{type.Name}.{definition.Name}", definition.ParamDefs
+                    .Where(p => p.Sequence > 0).OrderBy(p => p.Sequence).Select(p => p.Name.String).ToArray(), definition.IsStatic);
+                foreach (var instruction in body.Instructions)
+                    if (instruction.SequencePoint is { Document: { } doc } point)
+                        method.Points.Add(new SourcePoint(doc.Url, point.StartLine, point.StartColumn, token, (int)instruction.Offset,
+                            point.EndLine, point.EndColumn, doc.CheckSumAlgorithmId, doc.CheckSum ?? Array.Empty<byte>()));
+                int end = body.Instructions.Count == 0 ? 0 : (int)body.Instructions.Last().Offset + body.Instructions.Last().GetSize();
+                AddScope(pdb.Scope);
+                methods.Add(token, method);
+
+                void AddScope(dnlib.DotNet.Pdb.PdbScope scope)
+                {
+                    int startOffset = (int)(scope.Start?.Offset ?? 0);
+                    int endOffset = scope.End == null ? end : (int)scope.End.Offset;
+                    foreach (var local in scope.Variables)
+                        if ((local.Attributes & dnlib.DotNet.Pdb.PdbLocalAttributes.DebuggerHidden) == 0)
+                            method.Locals.Add((startOffset, endOffset, local.Index, local.Name));
+                    foreach (var child in scope.Scopes) AddScope(child);
+                }
             }
-        }
         return methods;
     }
 }

@@ -14,7 +14,8 @@ async function run() {
     const document = await vscode.workspace.openTextDocument(source);
     assert.equal(document.languageId, 'vb');
     const line = document.getText().split(/\r?\n/).findIndex(text => text.includes("' CALL"));
-    const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(source, new vscode.Position(line, 0)));
+    const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(source, new vscode.Position(line, 0)),
+        true, 'answer = 41', '== 1');
     const disposables = [];
     let timer;
     try {
@@ -48,6 +49,17 @@ async function run() {
             expression: 'environment', frameId: stack.stackFrames[0].id, context: 'repl'
         });
         assert.equal(evaluated.result, '"Test"');
+        const expression = await session.customRequest('evaluate', {
+            expression: 'sample.Count + numbers(1)', frameId: stack.stackFrames[0].id, context: 'watch'
+        });
+        assert.equal(expression.result, '31');
+        const modules = await session.customRequest('modules', {});
+        assert.ok(modules.modules.some(module => module.symbolStatus === 'Symbols loaded'));
+        const locations = await session.customRequest('breakpointLocations', {source: {path: source.fsPath}, line: line + 1});
+        assert.equal(locations.breakpoints[0].line, line + 1);
+        const args = await session.customRequest('evaluate', {expression: 'numbers', frameId: stack.stackFrames[0].id});
+        const page = await session.customRequest('variables', {variablesReference: args.variablesReference, start: 1, count: 1});
+        assert.equal(page.variables[0].value, '24');
         assert.ok(!vscode.extensions.getExtension('ms-dotnettools.csharp'));
         const report = process.env.VB_FRAMEWORK_DEBUG_TEST_REPORT;
         if (report) fs.writeFileSync(report, 'VS Code debugger smoke passed\n');

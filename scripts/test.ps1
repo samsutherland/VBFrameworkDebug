@@ -4,7 +4,10 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    node --test 'tests\extension.test.js'
     & "$PSScriptRoot\build.ps1" -Package:$VSCode
+    dotnet build 'tests\EvaluatorTests\EvaluatorTests.csproj' -c Release -p:Platform=x64 -p:PlatformTarget=x64 -o 'dist\evaluator-tests'
+    & '.\dist\evaluator-tests\DesktopClr.EvaluatorTests.exe'
     foreach ($architecture in 'x64', 'x86') {
         dotnet build 'tests\Fixture\Fixture.vbproj' "-p:Platform=$architecture" "-p:PlatformTarget=$architecture" -o "dist\fixtures\$architecture-portable"
         $legacy = Join-Path (Get-Location) "dist\fixtures\$architecture-windows\"
@@ -12,6 +15,22 @@ try {
         foreach ($format in 'portable', 'windows') {
             python 'tests\smoke.py' --adapter "bin\$architecture\DesktopClr.Adapter.exe" `
                 --fixture "dist\fixtures\$architecture-$format\Fixture.exe"
+            foreach ($suite in 'protocol', 'values', 'expressions', 'exceptions', 'attach', 'symbols', 'breakpoints') {
+                python "tests\${suite}_test.py" --adapter "bin\$architecture\DesktopClr.Adapter.exe" `
+                    --fixture "dist\fixtures\$architecture-$format\Fixture.exe"
+            }
+        }
+
+        dotnet build 'tests\WinFormsFixture\WinFormsFixture.vbproj' "-p:Platform=$architecture" "-p:PlatformTarget=$architecture" `
+            -o "dist\fixtures\winforms-$architecture-portable"
+        $formsLegacy = Join-Path (Get-Location) "dist\fixtures\winforms-$architecture-windows\"
+        dotnet msbuild 'tests\WinFormsLegacyFixture\WinFormsLegacyFixture.vbproj' "-p:Platform=$architecture" `
+            "-p:PlatformTarget=$architecture" "-p:OutputPath=$formsLegacy"
+        foreach ($format in 'portable', 'windows') {
+            python 'tests\winforms_test.py' --adapter "bin\$architecture\DesktopClr.Adapter.exe" `
+                --fixture "dist\fixtures\winforms-$architecture-$format\WinFormsFixture.exe"
+            python 'tests\attach_test.py' --adapter "bin\$architecture\DesktopClr.Adapter.exe" `
+                --fixture "dist\fixtures\winforms-$architecture-$format\WinFormsFixture.exe"
         }
     }
 
