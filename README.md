@@ -2,6 +2,8 @@
 
 Debug local VB.NET console and WinForms applications targeting .NET Framework 4.8 from VS Code on x64 Windows. Includes x86/x64 desktop CLR workers; Visual Studio and the C# extension are not runtime dependencies. Version 0.2.0 is a preview, not Visual Studio debugger parity.
 
+**WPF:** reported working in manual use with a .NET Framework application, using the same launch/attach configuration. WPF is not yet covered by the automated test matrix; automated application coverage currently includes console and WinForms only. This does not imply support for WPF on modern .NET/CoreCLR.
+
 ## Debug an existing project
 
 1. Download the VSIX from [GitHub Releases](https://github.com/samsutherland/VBFrameworkDebug/releases), optionally verify it against the attached `SHA256SUMS.txt`, and install with **Extensions: Install from VSIX**. GitHub installations do not auto-update; install the newer VSIX to update.
@@ -106,6 +108,8 @@ The complete matrix and isolated-profile installation have been exercised on a d
 
 ### GitHub prereleases
 
-After updating the extension version and committing the source, push a matching tag such as `v0.2.0`. The Windows workflow verifies the version, runs the test matrix, packages the workers, and creates a **draft prerelease** containing the VSIX, provenance metadata, and `SHA256SUMS.txt`. Release creation uses the repository's built-in Actions token; no personal publishing token is needed. The release job only runs after successful tests on a version-tag push. Review the workflow results and draft assets before publishing the prerelease. Workflow artifacts from ordinary commits/PRs are not published releases.
+Release Please uses conventional commits such as `fix:`, `feat:`, and `feat!:` to maintain a release PR with version and changelog updates. Merge that PR when ready. It creates a tag and a **draft prerelease**, then dispatches the Windows workflow for that tag: the workflow verifies the version, runs the test matrix, packages the workers, and attaches the VSIX, provenance metadata, and `SHA256SUMS.txt`. The draft can exist before tests finish: **do not publish until the tagged Windows workflow succeeds and all three assets are present**. Review the generated notes and known limitations before publishing.
+
+Actions must be allowed to create pull requests in repository settings. PRs created using `GITHUB_TOKEN` may require a maintainer to approve their workflow runs. No personal publishing token is needed. If dispatch fails or the build fails, fix the failure and manually run the Windows workflow at the release tag; the workflow refuses to upload assets to a published or non-prerelease release. Manually pushed matching version tags continue to create draft prereleases. Ordinary commit/PR workflow artifacts are not published releases.
 
 The extension and adapter are MIT-licensed. The VSIX includes notices for ClrDebug, dnlib, and the Microsoft runtime libraries that it bundles. The .NET Framework runtime is a system prerequisite and is not included.

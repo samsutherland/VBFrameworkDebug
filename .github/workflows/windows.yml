@@ -52,7 +52,7 @@ jobs:
           if-no-files-found: error
 
   draft-prerelease:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v')
     needs: test-and-package
     runs-on: windows-2022
     permissions:
@@ -103,6 +103,16 @@ jobs:
           Forcibly killing an attached paused target can report a native CLR cleanup warning.
           Separate clean-Windows validation without Visual Studio is still outstanding.
           '@ | Set-Content release\notes.md -Encoding utf8NoBOM
-          gh release create $env:GITHUB_REF_NAME --verify-tag --draft --prerelease `
-            --title "VB.NET Framework Debugger $env:GITHUB_REF_NAME (preview)" `
-            --notes-file release\notes.md $vsix release\release-info.json release\SHA256SUMS.txt
+          $releases = gh release list --repo $env:GH_REPO --limit 1000 --json tagName,isDraft,isPrerelease | ConvertFrom-Json
+          $existing = @($releases | Where-Object tagName -CEQ $env:GITHUB_REF_NAME)
+          if ($existing.Count -gt 1) { throw 'Multiple releases found for this tag.' }
+          if ($existing.Count -eq 1) {
+            if (!$existing[0].isDraft -or !$existing[0].isPrerelease) {
+              throw 'Refusing to upload build assets to a published or non-prerelease release.'
+            }
+            gh release upload $env:GITHUB_REF_NAME $vsix release\release-info.json release\SHA256SUMS.txt
+          } else {
+            gh release create $env:GITHUB_REF_NAME --verify-tag --draft --prerelease `
+              --title "VB.NET Framework Debugger $env:GITHUB_REF_NAME (preview)" `
+              --notes-file release\notes.md $vsix release\release-info.json release\SHA256SUMS.txt
+          }
