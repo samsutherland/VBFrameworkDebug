@@ -3,107 +3,152 @@
   "displayName": "VB.NET Framework Debugger",
   "description": "Debug local VB.NET console and WinForms applications on the Windows desktop CLR.",
   "publisher": "vbframeworkdebug",
-  "version": "0.2.0",
-  "repository": { "type": "git", "url": "https://github.com/samsutherland/VBFrameworkDebug.git" },
+  "version": "0.2.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/samsutherland/VBFrameworkDebug.git"
+  },
   "license": "MIT",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Debuggers"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers"
+  ],
   "main": "./extension.js",
-  "activationEvents": ["onDebugResolve:desktopclr"],
-  "extensionKind": ["workspace"],
+  "activationEvents": [
+    "onDebugResolve:desktopclr"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
   "capabilities": {
-    "untrustedWorkspaces": { "supported": false },
-    "virtualWorkspaces": { "supported": false }
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
   },
   "contributes": {
-    "breakpoints": [{ "language": "vb" }],
-    "debuggers": [{
-      "type": "desktopclr",
-      "label": "VB.NET (.NET Framework)",
-      "languages": ["vb"],
-      "configurationAttributes": {
-        "launch": {
-          "required": ["program"],
-          "properties": {
-            "program": {
-              "type": "string",
-              "description": "Path to a built .NET Framework console or WinForms executable.",
-              "default": "${workspaceFolder}\\bin\\Debug\\MyApp.exe"
-            },
-            "cwd": {
-              "type": "string",
-              "description": "Working directory. Defaults to the executable's directory."
-            },
-            "args": {
-              "type": "array",
-              "items": { "type": "string" },
-              "default": [],
-              "description": "Arguments passed to the executable."
-            },
-            "architecture": {
-              "type": "string",
-              "enum": ["x64", "x86"],
-              "default": "x64",
-              "description": "Debuggee architecture. Select x86 for an x86 or Prefer 32-bit executable."
-            },
-            "sourceFileMap": {
-              "type": "object",
-              "additionalProperties": { "type": "string" },
-              "default": {},
-              "description": "Map absolute PDB source directory prefixes to local directories. Longest boundary-matched prefix wins; checksums must match."
-            },
-            "expressionStringComparison": {
-              "type": "string",
-              "enum": ["binary"],
-              "description": "Explicitly select Option Compare Binary semantics for pure string comparisons. Omit to reject string comparisons rather than guess project settings."
-            },
-            "diagnostics": {
-              "type": "boolean",
-              "default": false,
-              "description": "Trace request names and stop/module transitions without variable values or launch arguments. Ordinary errors and module responses can still contain source paths."
+    "breakpoints": [
+      {
+        "language": "vb"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "desktopclr",
+        "label": "VB.NET (.NET Framework)",
+        "languages": [
+          "vb"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to a built .NET Framework console or WinForms executable.",
+                "default": "${workspaceFolder}\\bin\\Debug\\MyApp.exe"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory. Defaults to the executable's directory."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "Arguments passed to the executable."
+              },
+              "architecture": {
+                "type": "string",
+                "enum": [
+                  "x64",
+                  "x86"
+                ],
+                "default": "x64",
+                "description": "Debuggee architecture. Select x86 for an x86 or Prefer 32-bit executable."
+              },
+              "sourceFileMap": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Map absolute PDB source directory prefixes to local directories. Longest boundary-matched prefix wins; checksums must match."
+              },
+              "expressionStringComparison": {
+                "type": "string",
+                "enum": [
+                  "binary"
+                ],
+                "description": "Explicitly select Option Compare Binary semantics for pure string comparisons. Omit to reject string comparisons rather than guess project settings."
+              },
+              "diagnostics": {
+                "type": "boolean",
+                "default": false,
+                "description": "Trace request names and stop/module transitions without variable values or launch arguments. Ordinary errors and module responses can still contain source paths."
+              }
+            }
+          },
+          "attach": {
+            "required": [
+              "processId"
+            ],
+            "properties": {
+              "processId": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Numeric PID of a local .NET Framework process. Disconnect detaches by default."
+              },
+              "architecture": {
+                "type": "string",
+                "enum": [
+                  "x64",
+                  "x86"
+                ],
+                "default": "x64",
+                "description": "Must match the selected process. Modern .NET/CoreCLR is not supported."
+              },
+              "sourceFileMap": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Map absolute PDB source directory prefixes to local directories; source checksums are verified."
+              },
+              "expressionStringComparison": {
+                "type": "string",
+                "enum": [
+                  "binary"
+                ],
+                "description": "Explicit Option Compare Binary semantics for pure string comparisons."
+              },
+              "diagnostics": {
+                "type": "boolean",
+                "default": false,
+                "description": "Trace request names and stop/module transitions without variable values or launch arguments."
+              }
             }
           }
         },
-        "attach": {
-          "required": ["processId"],
-          "properties": {
-            "processId": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Numeric PID of a local .NET Framework process. Disconnect detaches by default."
-            },
-            "architecture": {
-              "type": "string",
-              "enum": ["x64", "x86"],
-              "default": "x64",
-              "description": "Must match the selected process. Modern .NET/CoreCLR is not supported."
-            },
-            "sourceFileMap": {
-              "type": "object",
-              "additionalProperties": { "type": "string" },
-              "default": {},
-              "description": "Map absolute PDB source directory prefixes to local directories; source checksums are verified."
-            },
-            "expressionStringComparison": {
-              "type": "string",
-              "enum": ["binary"],
-              "description": "Explicit Option Compare Binary semantics for pure string comparisons."
-            },
-            "diagnostics": {
-              "type": "boolean",
-              "default": false,
-              "description": "Trace request names and stop/module transitions without variable values or launch arguments."
-            }
+        "initialConfigurations": [
+          {
+            "name": "Launch VB.NET Framework app",
+            "type": "desktopclr",
+            "request": "launch",
+            "program": "${workspaceFolder}\\bin\\Debug\\MyApp.exe",
+            "architecture": "x64"
           }
-        }
-      },
-      "initialConfigurations": [{
-        "name": "Launch VB.NET Framework app",
-        "type": "desktopclr",
-        "request": "launch",
-        "program": "${workspaceFolder}\\bin\\Debug\\MyApp.exe",
-        "architecture": "x64"
-      }]
-    }]
+        ]
+      }
+    ]
   }
 }
