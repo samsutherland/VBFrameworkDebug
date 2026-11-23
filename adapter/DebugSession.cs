@@ -811,6 +811,7 @@ internal sealed class DebugSession(Action<string, object> emit) : IDisposable
         {
             var frame = thread.ActiveFrame as CorDebugILFrame ?? throw new InvalidOperationException("No managed frame to step.");
             stepper = frame.CreateStepper();
+            stepper.SetUnmappedStopMask(CorDebugUnmappedStop.STOP_NONE);
             if (command == "stepOut") stepper.StepOut();
             else
             {

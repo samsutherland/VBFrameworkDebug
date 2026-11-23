@@ -68,6 +68,34 @@ class ProtocolTests(unittest.TestCase):
         self.error("continue", threadId=thread, singleThread=True)
         self.assertTrue(self.client.request("stackTrace", threadId=thread)["stackFrames"])
 
+    def test_step_over_advances_from_a_breakpoint(self):
+        thread = self.stop()
+        c = self.client
+        c.request("next", threadId=thread)
+        stop = c.event("stopped")
+        self.assertEqual(stop["reason"], "step", stop)
+        frame = c.request("stackTrace", threadId=thread)["stackFrames"][0]
+        self.assertEqual(frame["line"], MARKERS["PRINT"], frame)
+
+    def assert_step_advances_in_callee(self, command):
+        thread = self.stop()
+        c = self.client
+        c.request("stepIn", threadId=thread)
+        self.assertEqual(c.event("stopped")["reason"], "step")
+        first = c.request("stackTrace", threadId=thread)["stackFrames"][0]
+        self.assertEqual(first["name"], "Program.Increment", first)
+        self.assertEqual(first["line"], MARKERS["HELPER"] - 1, first)
+        c.request(command, threadId=thread)
+        self.assertEqual(c.event("stopped")["reason"], "step")
+        second = c.request("stackTrace", threadId=thread)["stackFrames"][0]
+        self.assertEqual((second["name"], second["line"]), ("Program.Increment", MARKERS["HELPER"]), second)
+
+    def test_step_into_and_then_step_over_advances_in_the_callee(self):
+        self.assert_step_advances_in_callee("next")
+
+    def test_step_into_twice_advances_in_the_callee(self):
+        self.assert_step_advances_in_callee("stepIn")
+
     def test_unsupported_paging_is_not_silently_ignored(self):
         thread = self.stop()
         c = self.client
