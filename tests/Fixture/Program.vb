@@ -86,6 +86,8 @@ Class Sample
     Inherits BaseSample
     Public Count As Integer
     Public GetterCalls As Integer
+    Private Environment As String = "field"
+    Private WithEvents related As New SampleEventSource()
     Public Sub New(environment As String)
         Count = environment.Length ' CTOR
     End Sub
@@ -95,6 +97,11 @@ Class Sample
             Return -1
         End Get
     End Property
+End Class
+
+Class SampleEventSource
+    Public Value As Integer = 12
+    Public Property Enabled As Boolean
 End Class
 
 Class BaseSample

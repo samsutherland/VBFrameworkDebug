@@ -77,6 +77,24 @@ class ProtocolTests(unittest.TestCase):
         frame = c.request("stackTrace", threadId=thread)["stackFrames"][0]
         self.assertEqual(frame["line"], MARKERS["PRINT"], frame)
 
+    def test_step_into_framework_call_returns_to_source(self):
+        thread = self.stop()
+        c = self.client
+        c.request("next", threadId=thread)
+        self.assertEqual(c.event("stopped")["reason"], "step")
+        c.request("stepIn", threadId=thread)
+        self.assertEqual(c.event("stopped")["reason"], "step")
+        frame = c.request("stackTrace", threadId=thread)["stackFrames"][0]
+        self.assertEqual(frame["name"], "Program.Main", frame)
+        self.assertIn(frame["line"], (MARKERS["PRINT"], MARKERS["PRINT"] + 1), frame)
+        self.assertEqual(frame["source"]["path"], str(SOURCE))
+        # A return address may still map to the call site; the next step must advance.
+        if frame["line"] == MARKERS["PRINT"]:
+            c.request("next", threadId=thread)
+            self.assertEqual(c.event("stopped")["reason"], "step")
+            frame = c.request("stackTrace", threadId=thread)["stackFrames"][0]
+            self.assertEqual(frame["line"], MARKERS["PRINT"] + 1, frame)
+
     def assert_step_advances_in_callee(self, command):
         thread = self.stop()
         c = self.client

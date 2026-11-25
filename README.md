@@ -46,7 +46,7 @@ environment & " value"
 empty Is Nothing
 ```
 
-- Locals/arguments, `Me`, inherited instance fields, array indexing/grouping, boxed primitives, Decimal, and enum display. Arrays retain rank and actual lower bounds, with pages of at most 100 children. Expandable values provide reusable evaluation paths where representable.
+- Locals/arguments, `Me`, inherited instance fields, array indexing/grouping, boxed primitives, Decimal, and enum display. In a synchronous instance method, you can omit `Me.` for fields (including VB `WithEvents` members, read directly from their backing fields). Locals and arguments take precedence. Arrays retain rank and actual lower bounds, with pages of at most 100 children. Expandable values provide reusable evaluation paths where representable.
 - Literals (`True`, `False`, `Nothing`, doubled-quote strings, decimal numbers with optional `L`, `D`, `R`, `F` suffixes), unary `+`/`-`/`Not`, `+ - * / \ Mod`, string-only `&`, comparisons, reference `Is`/`IsNot`, and short-circuit `AndAlso`/`OrElse`.
 - Arithmetic supports signed Integer/Long, Decimal, and finite Double values with checked integer/decimal overflow. `/` is floating/decimal division; `\` requires integer operands. Single/unsigned arithmetic, implicit object/Boolean/string conversions, and non-finite floating results are rejected, not guessed. Use `L` for integer literals outside Integer range.
 - String comparisons require `"expressionStringComparison": "binary"` in launch/attach configuration. Set this only when Option Compare Binary semantics are appropriate. Project Option Compare/culture settings are not inferred.
@@ -58,7 +58,7 @@ An executable statement breakpoint must expose the real argument value. Stepping
 
 ## Breakpoints, exceptions, and execution
 
-Source breakpoints, step into/over/out, pause, threads, and call stacks use **all-stop** execution. Single-thread and instruction stepping are unsupported. Managed frames without symbols are displayed without invented source locations.
+Source breakpoints, step into/over/out, pause, threads, and call stacks use **all-stop** execution. Source steps skip symbol-less methods and hidden sequence points to find a mapped line. Breakpoints, pauses, and enabled exception stops still interrupt stepping. Single-thread and instruction stepping are unsupported. Managed frames without symbols are displayed without invented source locations.
 
 Conditional breakpoints use the same pure evaluator and require a Boolean. Hit conditions accept positive `N` or `>= N` (stop from hit N onward), `== N` (only hit N), and `% N` (every Nth hit). Counts increment before condition evaluation, per logical breakpoint across threads/AppDomains. Reapplying an identical specification preserves its count/ID; changing or removing/readding it resets them.
 

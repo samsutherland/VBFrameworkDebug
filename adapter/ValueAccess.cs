@@ -72,11 +72,12 @@ internal static class ValueAccess
         finally { Marshal.FreeHGlobal(buffer); }
     }
 
-    internal sealed class FieldInfo(string name, CorDebugClass declaringClass, mdFieldDef token)
+    internal sealed class FieldInfo(string name, CorDebugClass declaringClass, mdFieldDef token, string? propertyName)
     {
         public string Name { get; } = name;
         public CorDebugClass Class { get; } = declaringClass;
         public mdFieldDef Token { get; } = token;
+        public string? PropertyName { get; } = propertyName;
     }
 
     public static CorDebugValue Dereference(CorDebugValue value)
@@ -94,13 +95,20 @@ internal static class ValueAccess
         throw new InvalidOperationException("Reference indirection limit exceeded.");
     }
 
-    public static List<FieldInfo> Fields(CorDebugObjectValue value)
+    public static List<FieldInfo> Fields(CorDebugObjectValue value) => Fields(value, null, includePropertyNames: false);
+
+    private static List<FieldInfo> Fields(CorDebugObjectValue value, CorDebugClass? startAt, bool includePropertyNames)
     {
         var result = new List<FieldInfo>();
         var seen = new HashSet<string>();
         for (var type = value.ExactType; type != null; type = type.Base)
         {
             var cls = type.Class;
+            if (startAt != null)
+            {
+                if (cls.Token != startAt.Token || !Equals(cls.Module.Raw, startAt.Module.Raw)) continue;
+                startAt = null;
+            }
             string path = cls.Module.Name;
             if (!File.Exists(path)) throw new FileNotFoundException($"Cannot inspect field metadata for {path}.");
             using var pe = new PEReader(File.OpenRead(path));
@@ -113,10 +121,30 @@ internal static class ValueAccess
                 string name = md.GetString(field.Name);
                 // Preserve base fields even if a derived class hides one.
                 string display = seen.Add(name.ToUpperInvariant()) ? name : $"{md.GetString(definition.Name)}.{name}";
-                result.Add(new FieldInfo(display, cls, (mdFieldDef)MetadataTokens.GetToken(handle)));
+                result.Add(new FieldInfo(display, cls, (mdFieldDef)MetadataTokens.GetToken(handle),
+                    includePropertyNames ? BackingProperty(md, field) : null));
             }
         }
         return result;
+    }
+
+    private static string? BackingProperty(MetadataReader md, FieldDefinition field)
+    {
+        // VB WithEvents marks the field with the source-level property name.
+        // https://learn.microsoft.com/dotnet/api/system.runtime.compilerservices.accessedthroughpropertyattribute
+        foreach (var handle in field.GetCustomAttributes())
+        {
+            var attribute = md.GetCustomAttribute(handle);
+            if (attribute.Constructor.Kind != HandleKind.MemberReference) continue;
+            var parent = md.GetMemberReference((MemberReferenceHandle)attribute.Constructor).Parent;
+            if (parent.Kind != HandleKind.TypeReference) continue;
+            var type = md.GetTypeReference((TypeReferenceHandle)parent);
+            if (md.GetString(type.Namespace) != "System.Runtime.CompilerServices" ||
+                md.GetString(type.Name) != "AccessedThroughPropertyAttribute") continue;
+            var blob = md.GetBlobReader(attribute.Value);
+            if (blob.ReadUInt16() == 1) return blob.ReadSerializedString();
+        }
+        return null;
     }
 
     public static string TypeName(CorDebugClass cls)
@@ -154,9 +182,16 @@ internal static class ValueAccess
             throw new InvalidOperationException($"Cannot read '{name}' from Nothing.");
         if (value is not CorDebugObjectValue instance)
             throw new InvalidOperationException($"'{name}' requires an object value.");
-        var field = Fields(instance).FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase))
+        return FindField(instance, name)
             ?? throw new InvalidOperationException($"No instance field named '{name}'; properties and method calls are not evaluated.");
-        return instance.GetFieldValue(field.Class.Raw, field.Token);
+    }
+
+    public static CorDebugValue? FindField(CorDebugObjectValue instance, string name, CorDebugClass? startAt = null)
+    {
+        var field = Fields(instance, startAt, includePropertyNames: true).FirstOrDefault(f =>
+            string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(f.PropertyName, name, StringComparison.OrdinalIgnoreCase));
+        return field == null ? null : instance.GetFieldValue(field.Class.Raw, field.Token);
     }
 
     public static CorDebugValue Element(CorDebugValue raw, int[] indices)
