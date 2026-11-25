@@ -33,7 +33,7 @@ Class FixtureForm
 
     Public Environment As String
     Public Count As Integer
-    Private ReadOnly trigger As New Button()
+    Private WithEvents trigger As New Button()
 
     Public Sub New(environment As String)
         Me.Environment = environment ' FORMCTOR

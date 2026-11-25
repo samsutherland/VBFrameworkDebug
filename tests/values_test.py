@@ -80,8 +80,19 @@ class ConstructorTests(unittest.TestCase):
         thread = c.event("stopped")["threadId"]
         frame = c.request("stackTrace", threadId=thread)["stackFrames"][0]["id"]
         self.assertEqual(c.request("evaluate", expression="environment", frameId=frame)["result"], '"Test"')
+        self.assertEqual(c.request("evaluate", expression="Me.environment", frameId=frame)["result"], '"field"')
         self.assertEqual(c.request("evaluate", expression="Me.BaseCount", frameId=frame)["result"], "9")
         self.assertGreater(c.request("evaluate", expression="Me", frameId=frame)["variablesReference"], 0)
+        for context in ("hover", "repl"):
+            for expression, expected in (("basecount", "9"), ("RELATED.Value", "12"), ("Me.related.Value", "12")):
+                with self.subTest(context=context, expression=expression):
+                    self.assertEqual(c.request("evaluate", expression=expression, frameId=frame,
+                                               context=context)["result"], expected)
+            for expression in ("related.Enabled", "Dangerous"):
+                failure = c.response(c.send("evaluate", expression=expression, frameId=frame, context=context),
+                                     success=False)
+                self.assertIn("properties and method calls are not evaluated", failure["message"])
+        self.assertEqual(c.request("evaluate", expression="GetterCalls", frameId=frame)["result"], "0")
 
     def test_byref_argument_reads_the_referenced_value(self):
         c = Client(protocol_test.ADAPTER)

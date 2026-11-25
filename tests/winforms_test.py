@@ -36,6 +36,14 @@ class WinFormsTests(unittest.TestCase):
             if marker == "FORMCTOR":
                 ui_thread = thread
                 self.assertEqual(c.request("evaluate", expression="environment", frameId=frame["id"])["result"], '"Test"')
+                self.assertEqual(c.request("evaluate", expression="Count", frameId=frame["id"],
+                                           context="hover")["result"], "0")
+                button = c.request("evaluate", expression="trigger", frameId=frame["id"], context="repl")
+                self.assertEqual(button["type"], "System.Windows.Forms.Button")
+                self.assertGreater(button["variablesReference"], 0)
+                failure = c.response(c.send("evaluate", expression="trigger.Enabled", frameId=frame["id"],
+                                            context="repl"), success=False)
+                self.assertIn("properties and method calls are not evaluated", failure["message"])
             elif marker == "WORKER":
                 self.assertNotEqual(thread, ui_thread)
             else:

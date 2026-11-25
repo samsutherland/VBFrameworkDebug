@@ -64,6 +64,7 @@ internal sealed class DebugSession(Action<string, object> emit) : IDisposable
     private CorDebugProcess? process;
     private CorDebugController? stopped;
     private CorDebugStepper? stepper;
+    private int sourceStepRetries;
     private bool finished;
     private bool shuttingDown;
     private string? mainProgram;
@@ -208,8 +209,8 @@ internal sealed class DebugSession(Action<string, object> emit) : IDisposable
                                 Stop(e, hit.Thread, "breakpoint");
                             break;
                         case StepCompleteCorDebugManagedCallbackEventArgs step:
-                            stepper = null;
-                            Stop(e, step.Thread, "step");
+                            if (stepper != null && Equals(stepper.Raw, step.Stepper.Raw))
+                                CompleteStep(step);
                             break;
                         case BreakCorDebugManagedCallbackEventArgs pause:
                             Stop(e, pause.Thread, "pause");
@@ -543,6 +544,9 @@ internal sealed class DebugSession(Action<string, object> emit) : IDisposable
         modules.TryGetValue(frame.Function.Module.Raw, out var module) &&
         module.Symbols.TryGetValue((int)frame.FunctionToken, out var method) ? method : null;
 
+    private static SourcePoint? VisiblePoint(MethodSymbols? method, int offset) =>
+        method?.At(offset) is { Hidden: false } point ? point : null;
+
     public object Stack(int threadId, int start, int levels)
     {
         var result = new List<object>();
@@ -550,8 +554,7 @@ internal sealed class DebugSession(Action<string, object> emit) : IDisposable
             foreach (var frame in chain.Frames.OfType<CorDebugILFrame>())
             {
                 var method = Method(frame);
-                var point = method?.At(frame.IP.pnOffset);
-                if (point?.Hidden == true) point = null;
+                var point = VisiblePoint(method, frame.IP.pnOffset);
                 int id = ++nextId;
                 frames.Add(id, frame);
                 result.Add(new
@@ -689,7 +692,12 @@ internal sealed class DebugSession(Action<string, object> emit) : IDisposable
         if (!method.IsStatic && name.Equals("Me", StringComparison.OrdinalIgnoreCase)) return frame.GetArgument(0);
         int index = Array.FindIndex(method.Arguments, n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (index >= 0) return frame.GetArgument(index + (method.IsStatic ? 0 : 1));
-        throw new InvalidOperationException($"'{name}' is not a local or argument in the selected stack frame.");
+        // Start at the frame's declaring type so a derived instance cannot hide its fields.
+        if (machine == null && !method.IsStatic &&
+            ValueAccess.Dereference(frame.GetArgument(0)) is CorDebugObjectValue instance &&
+            ValueAccess.FindField(instance, name, frame.Function.Class) is { } field)
+            return field;
+        throw new InvalidOperationException($"'{name}' is not a local or argument in the selected stack frame or an instance field on Me; properties and method calls are not evaluated.");
     }
 
     private int Store(Func<int, int, object[]> get, bool indexed)
@@ -810,31 +818,66 @@ internal sealed class DebugSession(Action<string, object> emit) : IDisposable
         if (command != "continue")
         {
             var frame = thread.ActiveFrame as CorDebugILFrame ?? throw new InvalidOperationException("No managed frame to step.");
-            stepper = frame.CreateStepper();
-            stepper.SetUnmappedStopMask(CorDebugUnmappedStop.STOP_NONE);
-            if (command == "stepOut") stepper.StepOut();
-            else
-            {
-                int ip = frame.IP.pnOffset;
-                var method = Method(frame);
-                var point = method?.At(ip);
-                if (point != null)
-                {
-                    int end = method!.Points.FirstOrDefault(p => !p.Hidden && p.Offset > ip &&
-                        (p.Line != point.Line || p.Path != point.Path))?.Offset ?? frame.Code.Size;
-                    if (end > ip)
-                        stepper.StepRange(command == "stepIn", new[] { new COR_DEBUG_STEP_RANGE
-                            { startOffset = point.Offset, endOffset = end } }, 1);
-                    else stepper.Step(command == "stepIn");
-                }
-                else stepper.Step(command == "stepIn");
-            }
+            sourceStepRetries = 0;
+            StartStep(frame, Method(frame), command == "stepIn", command == "stepOut");
         }
         RefreshBreakpoints(true);
         stopped!.Continue(false);
         stopped = null;
         InvalidateHandles();
         emit("continued", new { threadId, allThreadsContinued = true });
+    }
+
+    private void CompleteStep(StepCompleteCorDebugManagedCallbackEventArgs step)
+    {
+        stepper = null;
+        try
+        {
+            if (step.Thread.ActiveFrame is CorDebugILFrame frame)
+            {
+                var method = Method(frame);
+                if (VisiblePoint(method, frame.IP.pnOffset) == null)
+                {
+                    if (sourceStepRetries++ < 128)
+                    {
+                        // StepOut returns to the caller; a hidden region in a mapped method
+                        // can instead be stepped over without abandoning the method.
+                        // https://learn.microsoft.com/en-us/dotnet/core/unmanaged-api/debugging/icordebug/icordebugstepper-stepout-method
+                        StartStep(frame, method, stepIn: false, stepOut: method?.Points.Any(p => !p.Hidden) != true);
+                        return;
+                    }
+                    Diagnostic("Stepping stopped after 128 attempts to find a mapped source line.");
+                }
+            }
+        }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException or DebugException)
+        {
+            Diagnostic($"Could not step to a mapped source line: {ex.Message}");
+        }
+        Stop(step, step.Thread, "step");
+    }
+
+    private void StartStep(CorDebugILFrame frame, MethodSymbols? method, bool stepIn, bool stepOut)
+    {
+        var next = frame.CreateStepper();
+        next.SetUnmappedStopMask(CorDebugUnmappedStop.STOP_NONE);
+        if (stepOut) next.StepOut();
+        else
+        {
+            int ip = frame.IP.pnOffset;
+            var point = method?.At(ip);
+            if (point == null) next.Step(stepIn);
+            else
+            {
+                int end = method!.Points.FirstOrDefault(p => !p.Hidden && p.Offset > ip &&
+                    (point.Hidden || p.Line != point.Line || p.Path != point.Path))?.Offset ?? frame.Code.Size;
+                if (end > ip)
+                    next.StepRange(stepIn, new[] { new COR_DEBUG_STEP_RANGE
+                        { startOffset = point.Offset, endOffset = end } }, 1);
+                else next.Step(stepIn);
+            }
+        }
+        stepper = next;
     }
 
     private void InvalidateHandles()
